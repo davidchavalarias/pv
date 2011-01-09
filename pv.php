@@ -32,7 +32,10 @@ for ($ii=1;$ii<2;$ii++) {
     $fields=array_keys($to_process);
     $query="
 CREATE TABLE IF NOT EXISTS `pvalues` (
-  `id` int(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,";
+  `id` int(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `type` int(11),
+  `value` varchar(11),
+";
     for ($i=1;$i<count($fields);$i++) {
         $query.="`".$fields[$i]."` ".$to_process[$fields[$i]]."  NOT NULL,";
     }
@@ -42,61 +45,77 @@ CREATE TABLE IF NOT EXISTS `pvalues` (
 //
     $nbAB=0;
     $articles=0;
-
+    $articleWithPvalues=0;
+    $pvalueFound=0; // dit si il y avait une mention de p-value dans l'article
+    $inAB=0; // dit si l'on est dans un AB.
     if ($handle) {
         while (($ligne = fgets($handle, 10000)) !== false) {
-
-        $prefix=getField($line);
-        if ((strcmp($prefix),'PMID')==0)&&($articles>0){
-
-
-        }else{
-
-
-        }
-            if (strcmp(substr($ligne, 0,4),'PMID')==0) {
-                $temp=explode(' ',$ligne);
-                $PMID=$temp[1];
-                $PMIDMeta=1; // dit si des infos mate ont déjà été ajoutées sur cet abstract ex: nb abstract
+            $prefix=getField($ligne);
+            if (strcmp($prefix,'suite')!=0) {
+                if (strcmp($prefix,'AB')!=0) {
+                    $inAB=FALSE;
+                }else {
+                    $inAB=TRUE;
+                    $nbAB++;
+                    $pvalueFound=0;
+                }
             }
-            //echo $ligne.'<br/>';
-            //for ($j=0;$j<count($pattern); $j++){
+
+            //echo $prefix.'-'.$articles.'-'.$pvalueFound.'<br/>';
+            if (strcmp($prefix,'PMID')==0) {
+            $articles+=1;
+                if(($articles>0)&&($pvalueFound==1)) {
+                    $articleWithPvalues+=1;
+                    for ($k=0;$k<count($pvalues_array);$k++) {
+                        $pvalue=$pvalues_array[$k];
+                        if ($pvalue<1) {
+                            $sql="INSERT INTO pvalues (id,PMID,type,value,SB,DP) VALUES ('','".$PMID."','".$delimiter[0]."','".str_replace(',','.',$pvalue)."','".$SB."','".$name."')";
+                            echo $sql.'<br/>';
+                        }  
+                    }
+                    mysql_query($sql) or die ("<b>data not inserted)</b>.");
+                }
+                $SB='';
+            }
+
+            if ((strcmp($prefix,'PMID')==0)) {
+                $PMID=getLineValue($ligne);
+                $pvalues_array=array();
+                echo $PMID.'<br/>';
+                $PMIDMeta=1; // dit si des infos mate ont déjà été ajoutées sur cet abstract ex: nb abstract
+            }elseif ((strcmp($prefix,'SB')==0)) {
+               $SB.=getLineValue($ligne);
+               
+            }
+
 
             //if (preg_match("/p{1}((\s|-)?)(value?)(=|<|>|≤|≥)[0-9\.\,]+/", $ligne, $matches)) {
-            if (preg_match_all("/[Pp]{1}(\s|-)*(value)?(\s)*(=|<|>|≤|≥){1}(\s)*[0-9]+[\,|\.]?[0-9]+/", $ligne, $matches)) {
-                echo '<br/>'.$nbAB.') '.$ligne;
-                if ($PMIDMeta==1) {
-                    $nbAB++;
-                    $PMIDMeta=0;
-                }
+            if ($inAB) {
+                if (preg_match_all("/[Pp]{1}(\s|-)*(value)?(\s)*(=|<|>|≤|≥){1}(\s)*[0-9]+[\,|\.]?[0-9]+/", $ligne, $matches)) {
+                    $pvalueFound=1;
+                    //echo 'pvalue found '.$pvalueFound.'<br/>';
 
-                for  ($j=0;$j<count($matches); $j++) {
-                    if (strlen($matches[0][$j])>0) {
-                        $chunk=$matches[0][$j];
-                        //echo $chunk.'<br/>';
-                        $temp=preg_split("/(=|<|>|≤|≥)/",$chunk);
-                        //echo $temp[1].'<br/>';
-                        preg_match("/(=|<|>|≤|≥)/", $chunk, $delimiter);
-                        //echo $delimiter[0].'<br/>';
-                        if ($temp[1]<1) {
-                            $sql="INSERT INTO pvalues (id,PMID,type,value) VALUES ('','".$PMID."','".$delimiter[0]."','".str_replace(',','.',$temp[1])."')";
-                            //echo $sql.'<br/>';
-                        }
-                        mysql_query($sql) or die ("<b>data not inserted)</b>.");
-
+                    if ($PMIDMeta==1) {
+                        $PMIDMeta=0;
                     }
+
+                    for  ($j=0;$j<count($matches); $j++) {
+                        if (strlen($matches[0][$j])>0) {
+                            $chunk=$matches[0][$j];
+                            $temp=preg_split("/(=|<|>|≤|≥)/",$chunk);
+                            $pvalues_array[]=$temp[1];
+                            preg_match("/(=|<|>|≤|≥)/", $chunk, $delimiter);
+                        }
+                    }
+                    //error();
                 }
-                //error();
-            }
-
-
-
         }
-        if (!feof($handle)) {
-            echo "Error: unexpected fgets() fail\n";
-        }
-        fclose($handle);
     }
+    if (!feof($handle)) {
+        echo "Error: unexpected fgets() fail\n";
+    }
+    fclose($handle);
+}
 
 
 //    for( $i = 0 ; $i < count($tabfich) ; $i++ ) {
@@ -139,50 +158,57 @@ CREATE TABLE IF NOT EXISTS `pvalues` (
 //      }
 
 // STAT ///////
-    echo 'number of abstracts treated: '.$nbAB.'<br/>';
+echo 'number of articles treated: '.$articles.'<br/>';
+echo 'number of abstracts treated: '.$nbAB.'<br/>';
+echo 'number of articles with p-values: '.$articleWithPvalues.'<br/>';
 
 // Graphiques
-    $sql="SELECT value FROM pvalues WHERE type=('=' OR '<' OR '≤') ORDER BY value";
-    $resultat=mysql_query($sql) or die ("<b>pvalues not retrieved)</b>.");
-    $data=array();
-    while ($ligne=mysql_fetch_array($resultat)) {
-        $value=$ligne[value];
-        //echo $value.'<br/>';
-        if ($data[trim($value)]==null) {
-            $data[trim($value)]=1;
-            echo 'new pvalue: '.trim($value).'<br/>';
-        }else {
-            $data[trim($value)]+=1;
-        };
-    }
+$sql="SELECT value FROM pvalues WHERE type=('=' OR '<' OR '≤') ORDER BY value";
+$resultat=mysql_query($sql) or die ("<b>pvalues not retrieved)</b>.");
+$data=array();
+while ($ligne=mysql_fetch_array($resultat)) {
+    $value=$ligne[value];
+    //echo $value.'<br/>';
+    if ($data[trim($value)]==null) {
+        $data[trim($value)]=1;
+        echo 'new pvalue: '.trim($value).'<br/>';
+    }else {
+        $data[trim($value)]+=1;
+    };
+}
 
-    $data_val=array_keys($data);
-    $data_occ=array_values($data);
+$data_val=array_keys($data);
+$data_occ=array_values($data);
 
-    $dataValFile = fopen('dataval_'.$name.'.txt','w');
-    $dataOccFile = fopen('dataocc_'.$name.'.txt','w');
+$dataValFile = fopen('dataval_'.$name.'.txt','w');
+$dataOccFile = fopen('dataocc_'.$name.'.txt','w');
 
-    while (count($data_val)>0) {
-        $val=array_pop($data_val);
-        $occ=array_pop($data_occ);
-        fputs($dataValFile,$val.' ');
-        fputs($dataOccFile,$occ.' ');
-    }
+while (count($data_val)>0) {
+    $val=array_pop($data_val);
+    $occ=array_pop($data_occ);
+    fputs($dataValFile,$val.' ');
+    fputs($dataOccFile,$occ.' ');
+}
 
-    fclose($dataValFile);
-    fclose($dataOccFile);
+fclose($dataValFile);
+fclose($dataOccFile);
 //include('include/include_chart.php');
 //echo $myscript;
 }
 
 
-function getField($line) {
+function getField($ligne) {
 // done le descripteur du champ Medline ou retourne 0
     if (strcmp($ligne[0],' ')==0) {
-        return FALSE;
+        return 'suite';
     }else {
         $pos=stripos($ligne,'-');
-        return trim(substr($ligne,0,$pos-1));
+        return trim(substr($ligne,0,$pos));
     }
+}
+function getLineValue($ligne) {
+// done la valueur correspondant au descripteur du champ Medline
+    $pos=stripos($ligne,'-');
+    return substr($ligne,$pos+2);
 }
 ?>
