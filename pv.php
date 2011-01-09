@@ -10,20 +10,12 @@ if ($encodage=="utf-8") mysql_query("SET NAMES utf8;");
 //à préciser lorsqu'on est sur sciencemapping.com
 if ($user!="root") mysql_query("SET NAMES utf8;");
 
-
-for ($ii=1;$ii<2;$ii++) {
-    $name=2006+$ii;
-    $fichier="http://127.0.0.1/medline/PubMed_Abstracts/Pubmed_".$name."[dp]/Pubmed_".$name."[dp].txt";
-    echo $fichier.'<br/>';
-    //$fichier="data/pubmed_result.txt";
-    $fichier="data/test.txt";
     $adresse_root= $_SERVER['DOCUMENT_ROOT'];
 
     include("include/header.php");
-    // import des données
-    //echo $fichier;
-    //$tabfich=file($fichier);
-    $handle=@fopen($fichier, "r");
+
+// Table pvalue
+
     $query="DROP TABLE pvalues ";
     mysql_query($query) or die ("<b>table non effacée</b>.");
 
@@ -43,6 +35,30 @@ CREATE TABLE IF NOT EXISTS `pvalues` (
     echo $sql;
     mysql_query($sql) or die ("<b>Requête non exécutée (creation de la table pvalues)</b>.");
 //
+
+        $query="DROP TABLE pvalues ";
+    mysql_query($query) or die ("<b>table non effacée</b>.");
+
+
+// creation de la table data    $query="
+$sql="CREATE TABLE IF NOT EXISTS `count` (
+  `id` int(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `type` int(11),
+  `year` int(4),
+  `value` varchar(11)) ENGINE=MyISAM DEFAULT CHARSET=latin1";
+    mysql_query($sql) or die ("<b>Requête non exécutée (creation de la table count)</b>.");
+//
+
+
+for ($ii=1;$ii<38;$ii++) {
+    $name=1970+$ii;
+    $fichier="http://127.0.0.1/medline/PubMed_Abstracts/Pubmed_".$name."[dp]/Pubmed_".$name."[dp].txt";
+    // import des données
+    //echo $fichier;
+    //$tabfich=file($fichier);
+    $handle=@fopen($fichier, "r");
+    //$fichier="data/pubmed_result.txt";
+    //$fichier="data/test.txt";
     $nbAB=0;
     $articles=0;
     $articleWithPvalues=0;
@@ -63,17 +79,18 @@ CREATE TABLE IF NOT EXISTS `pvalues` (
 
             //echo $prefix.'-'.$articles.'-'.$pvalueFound.'<br/>';
             if (strcmp($prefix,'PMID')==0) {
-            $articles+=1;
+                $articles+=1;
                 if(($articles>0)&&($pvalueFound==1)) {
+                    echo $PMID.'<br/>';
                     $articleWithPvalues+=1;
                     for ($k=0;$k<count($pvalues_array);$k++) {
                         $pvalue=$pvalues_array[$k];
                         if ($pvalue<1) {
                             $sql="INSERT INTO pvalues (id,PMID,type,value,SB,DP) VALUES ('','".$PMID."','".$delimiter[0]."','".str_replace(',','.',$pvalue)."','".$SB."','".$name."')";
                             echo $sql.'<br/>';
-                        }  
+                            mysql_query($sql) or die ("<b>data not inserted)</b>.");
+                        }
                     }
-                    mysql_query($sql) or die ("<b>data not inserted)</b>.");
                 }
                 $SB='';
             }
@@ -81,11 +98,10 @@ CREATE TABLE IF NOT EXISTS `pvalues` (
             if ((strcmp($prefix,'PMID')==0)) {
                 $PMID=getLineValue($ligne);
                 $pvalues_array=array();
-                echo $PMID.'<br/>';
                 $PMIDMeta=1; // dit si des infos mate ont déjà été ajoutées sur cet abstract ex: nb abstract
             }elseif ((strcmp($prefix,'SB')==0)) {
-               $SB.=getLineValue($ligne);
-               
+                $SB.=getLineValue($ligne);
+
             }
 
 
@@ -109,13 +125,13 @@ CREATE TABLE IF NOT EXISTS `pvalues` (
                     }
                     //error();
                 }
+            }
         }
+        if (!feof($handle)) {
+            echo "Error: unexpected fgets() fail\n";
+        }
+        fclose($handle);
     }
-    if (!feof($handle)) {
-        echo "Error: unexpected fgets() fail\n";
-    }
-    fclose($handle);
-}
 
 
 //    for( $i = 0 ; $i < count($tabfich) ; $i++ ) {
@@ -158,40 +174,53 @@ CREATE TABLE IF NOT EXISTS `pvalues` (
 //      }
 
 // STAT ///////
-echo 'number of articles treated: '.$articles.'<br/>';
-echo 'number of abstracts treated: '.$nbAB.'<br/>';
-echo 'number of articles with p-values: '.$articleWithPvalues.'<br/>';
+    echo 'number of articles treated: '.$articles.'<br/>';
+    echo 'number of abstracts treated: '.$nbAB.'<br/>';
+    echo 'number of articles with p-values: '.$articleWithPvalues.'<br/>';
+
+    $sql="INSERT INTO pvalues (id,type,year,value) VALUES ('','nbArticles','".$name."','".$articles."')";
+    echo $sql.'<br/>';
+    mysql_query($sql) or die ("<b>data not inserted)</b>.");
+
+    $sql="INSERT INTO pvalues (id,type,year,value) VALUES ('','nbArticles','".$name."','".$nbAB."')";
+    echo $sql.'<br/>';
+    mysql_query($sql) or die ("<b>data not inserted)</b>.");
+
+
+    $sql="INSERT INTO pvalues (id,type,year,value) VALUES ('','nbArticles','".$name."','".$articleWithPvalues."')";
+    echo $sql.'<br/>';
+    mysql_query($sql) or die ("<b>data not inserted)</b>.");
 
 // Graphiques
-$sql="SELECT value FROM pvalues WHERE type=('=' OR '<' OR '≤') ORDER BY value";
-$resultat=mysql_query($sql) or die ("<b>pvalues not retrieved)</b>.");
-$data=array();
-while ($ligne=mysql_fetch_array($resultat)) {
-    $value=$ligne[value];
-    //echo $value.'<br/>';
-    if ($data[trim($value)]==null) {
-        $data[trim($value)]=1;
-        echo 'new pvalue: '.trim($value).'<br/>';
-    }else {
-        $data[trim($value)]+=1;
-    };
-}
+    $sql="SELECT value FROM pvalues WHERE type=('=' OR '<' OR '≤') ORDER BY value";
+    $resultat=mysql_query($sql) or die ("<b>pvalues not retrieved)</b>.");
+    $data=array();
+    while ($ligne=mysql_fetch_array($resultat)) {
+        $value=$ligne[value];
+        //echo $value.'<br/>';
+        if ($data[trim($value)]==null) {
+            $data[trim($value)]=1;
+            echo 'new pvalue: '.trim($value).'<br/>';
+        }else {
+            $data[trim($value)]+=1;
+        };
+    }
 
-$data_val=array_keys($data);
-$data_occ=array_values($data);
+    $data_val=array_keys($data);
+    $data_occ=array_values($data);
 
-$dataValFile = fopen('dataval_'.$name.'.txt','w');
-$dataOccFile = fopen('dataocc_'.$name.'.txt','w');
+    $dataValFile = fopen('dataval_'.$name.'.txt','w');
+    $dataOccFile = fopen('dataocc_'.$name.'.txt','w');
 
-while (count($data_val)>0) {
-    $val=array_pop($data_val);
-    $occ=array_pop($data_occ);
-    fputs($dataValFile,$val.' ');
-    fputs($dataOccFile,$occ.' ');
-}
+    while (count($data_val)>0) {
+        $val=array_pop($data_val);
+        $occ=array_pop($data_occ);
+        fputs($dataValFile,$val.' ');
+        fputs($dataOccFile,$occ.' ');
+    }
 
-fclose($dataValFile);
-fclose($dataOccFile);
+    fclose($dataValFile);
+    fclose($dataOccFile);
 //include('include/include_chart.php');
 //echo $myscript;
 }
